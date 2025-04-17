@@ -657,7 +657,7 @@ def comp(prog: ProgramNode) ->int:
             outcode.append('{}:'.format(n.name.replace('main', '_start')))
             outcode.append('  push rbp')
             outcode.append('  mov rbp, rsp')
-            outcode.append('  sub rsp, 64')
+            outcode.append('  sub rsp, 512')
             comp_block(n.block, n.args)
             outcode.append('  leave')
             outcode.append('  ret')
