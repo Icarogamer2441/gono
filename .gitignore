@@ -1,0 +1,7 @@
+*.s
+hello
+dist/
+*.o
+build/
+
+*.spec

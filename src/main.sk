@@ -1,0 +1,190 @@
+import "lexer_parser.sk";
+from python import os;
+
+outcode: list[str] = [
+    "section .bss",
+    "buf:    resb    20",
+    "",
+    "section .text",
+    "global _start",
+    "",
+    "sysc:",
+    "    mov     rax, rbx",
+    "    syscall",
+    "    ret",
+    "",
+    "printi:",
+    "    ; — get number from rbx into rax —",
+    "    mov     rax, rbx",
+    "    ; — point rsi at end of buffer —",
+    "    lea     rsi, [buf+20]",
+    "    xor     rcx, rcx          ; digit count = 0",
+    "    cmp     rax, 0",
+    "    jne     .printi_loop",
+    "    ; special‑case zero",
+    "    dec     rsi",
+    "    mov     byte [rsi], '0'",
+    "    inc     rcx",
+    "    jmp     .printi_done",
+    ".printi_loop:",
+    "    xor     rdx, rdx",
+    "    mov     r10, 10           ; divisor in r10",
+    "    div     r10               ; rax/=10, rdx=digit",
+    "    add     dl, '0'",
+    "    dec     rsi",
+    "    mov     [rsi], dl",
+    "    inc     rcx               ; count this digit",
+    "    cmp     rax, 0",
+    "    jne     .printi_loop",
+    ".printi_done:",
+    "    ; write(1, rsi, rcx)",
+    "    mov     rbx, 1            ; sys_write",
+    "    mov     rdi, 1            ; fd = stdout",
+    "    mov     rdx, rcx          ; length",
+    "    call    sysc",
+    "    ret"
+];
+
+strs: list[tuple[str, int]] = [];
+strco: list[int] = [0];
+
+regargs: list[str] = ["rbx", "rdi", "rsi", "rdx", "r8"];
+regargs1: list[str] = ["rdi", "rsi", "rdx", "r8", "rbx"];
+
+def comp_expr(block: BlockNode, args: dict[str, int] = {}) -> int:
+    i: int = 0;
+    nodes: All = block.code;
+    while i < len(nodes):
+        n: All = nodes[i];
+        i++;
+        if isinstance(n, OtherNode):
+            if n.value.startswith("\"") && n.value.endswith("\""):
+                strs.append((n.value, strco[0]));
+                strco[0] += 1;
+                outcode.append("  push str{}".f(strco[0] - 1));
+            elif n.value.isdigit():
+                outcode.append("  push {}".f(n.value));
+            elif n.value == "+":
+                outcode.append("  pop rax");
+                outcode.append("  pop r8");
+                outcode.append("  add r8, rax");
+                outcode.append("  push r8");
+                outcode.append("  xor r8, r8");
+            elif n.value == "-":
+                outcode.append("  pop rax");
+                outcode.append("  pop r8");
+                outcode.append("  sub r8, rax");
+                outcode.append("  push r8");
+                outcode.append("  xor r8, r8");
+            elif n.value == "*":
+                outcode.append("  pop rax");
+                outcode.append("  pop r8");
+                outcode.append("  imul r8, rax");
+                outcode.append("  push r8");
+                outcode.append("  xor r8, r8");
+            elif n.value == "/":
+                outcode.append("  pop r8");
+                outcode.append("  pop rax");
+                outcode.append("  push rdx");
+                outcode.append("  xor rdx, rdx");
+                outcode.append("  div r8");
+                outcode.append("  pop rdx")
+                outcode.append("  push rax");
+                outcode.append("  xor r8, r8");
+            elif n.value in args.keys():
+                outcode.append("  push {}".f(regargs[args[n.value]]));
+    return 0;
+
+def comp_block(block: BlockNode, args: list[str] = []) -> int:
+    i: int = 0;
+    nodes: All = block.code;
+    offset: int = 1;
+    varss: dict[str, int] = {};
+    while i < len(nodes):
+        n: All = nodes[i];
+        i++;
+        if isinstance(n, CallNode):
+            cal: int = len(n.args);
+            for i2, arg in enumerate(n.args):
+                if arg.startswith("\"") && arg.endswith("\""):
+                    strs.append((arg, strco[0]));
+                    strco[0] += 1;
+                    outcode.append("  mov {}, str{}".f(regargs[i2], strco[0] - 1));
+                elif arg.isdigit():
+                    outcode.append("  mov {}, {}".f(regargs[i2], arg));
+                else:
+                    if arg in varss.keys():
+                        outcode.append("  mov {}, [rbp-{}]".f(regargs[i2], varss[arg]));
+                    else:
+                        outcode.append("  mov {}, {}".f(regargs[i2], regargs1[i2 - (cal - 1)]));
+            outcode.append("  call {}".f(n.funcname));
+            outcode.append("  push rax");
+        elif isinstance(n, ReturnNode):
+            argss: dict[All, int] = {};
+            i2: int = 0;
+            while i2 < len(args):
+                argss[args[i2]] = i2;
+                i2++;
+            comp_expr(n.returncode, argss);
+            outcode.append("  pop rax");
+        elif isinstance(n, SetNode):
+            argss: dict[All, int] = {};
+            i2: int = 0;
+            while i2 < len(args):
+                argss[args[i2]] = i2;
+                i2++;
+            comp_expr(n.code, argss);
+            outcode.append("  pop rax");
+            outcode.append("  mov qword [rbp-{}], rax".f(offset * 8));
+            varss[n.vname] = offset*8;
+            offset++;
+    return 0;
+
+def comp(prog: ProgramNode) -> int:
+    i: int = 0;
+    nodes: All = prog.code;
+    while i < len(nodes):
+        n: All = nodes[i];
+        i++;
+        if isinstance(n, ImportNode):
+            code: str = open(n.filepath + ".gn", "r").read();
+            comp(parse(tokenize(code)));
+        elif isinstance(n, FuncNode):
+            outcode.append("{}:".f(n.name.replace("main", "_start")));
+            outcode.append("  push rbp");
+            outcode.append("  mov rbp, rsp");
+            outcode.append("  sub rsp, 64");
+            comp_block(n.block, n.args);
+            outcode.append("  leave");
+            outcode.append("  ret");
+            outcode.append("");
+    return 0;
+
+def add_strs() -> None:
+    for s in strs:
+        outcode.append("  str{}: db '{}'".f(s[1], s[0][1:-1].replace("\\n", "', 10, '")));
+
+error NotEnoughArgs() -> f"Not enough arguments!\nUsage: {argv[0]} input.gn out";
+error IncorrectExtension(ext: str) -> f"Expected extension '.{ext}', got unknown extension.\nUsage: {argv[0]} input.gn out";
+
+export def main() -> None:
+    if argc < 3:
+        raise NotEnoughArgs();
+    if !argv[1].endswith(".gn"):
+        raise IncorrectExtension("gn");
+    code: str = open(argv[1], "r").read();
+    comp(parse(tokenize(code)));
+
+    outcode.append("");
+    outcode.append("section .data");
+
+    add_strs();
+
+    final_code: str = "\n".join(outcode);
+
+    with open(argv[2] + ".s", "w") as out:
+        out.write(final_code);
+
+    os.system("nasm -felf64 {} -o {}".f(argv[2] + ".s", argv[2] + ".o"));
+    os.system("ld {} -o {}".f(argv[2] + ".o", argv[2]));
+    os.system("rm {}".f(argv[2] + ".o"));

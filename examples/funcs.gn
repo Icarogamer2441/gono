@@ -1,0 +1,19 @@
+import "libs/stdlib"
+
+create add : a b : {
+    return a b + :: /*
+                    + - * /
+                    */
+}
+
+create main : : {
+    call prints "10 + 20 = " 10 ::
+    call add 10 20 ::
+    set out -> :: /* functions returns are pushed to the stack,
+                     so you don't need to call functions inside variables,
+                     and this is why you can't use call inside variable defs */
+    call printi out ::
+    call prints "\n" 1 ::
+
+    call end ::
+}

@@ -1,0 +1,6 @@
+import "libs/stdlib"
+
+create main : : {
+    call prints "Hello, world!\n" 14 ::
+    call end ::
+}

@@ -1,0 +1,14 @@
+create prints : msg len : {
+    set mes -> msg ::
+    set l -> len ::
+    call sysc 1 1 mes l ::
+    return 0 ::
+}
+
+create end : : {
+    call sysc 60 0 ::
+}
+
+create exit : exit_code : {
+    call sysc 60 exit_code ::
+}

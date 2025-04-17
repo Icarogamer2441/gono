@@ -1,0 +1,149 @@
+error ParserExpectedError(val: str, line: int, expec: str) -> f"Expected '{expec}', but got '{val}'. at line: {line}";
+
+error ParserTypeError(val: str, line: int, type: str) -> f"Expected value of type '{type}', but got '{val}' that is another type. at line: {line}";
+
+def tokenize(code: str) -> list[tuple[str, int]]:
+    lines: list[str] = code.split("\n");
+    tks: list[tuple[str, int]] = [];
+    for i, line in enumerate(lines):
+        tokns: list[str] = line.split();
+        i: int = 0;
+        while i < len(tokns):
+            tkn: str = tokns[i];
+            i++;
+            if tkn.startswith("\""):
+                if tkn.endswith("\""):
+                    tks.append((tkn.replace("\\s", " "), i));
+                else:
+                    final: list[str] = [tkn];
+                    while !tkn.endswith("\"") && i < len(tokns):
+                        tkn = tokns[i];
+                        i++;
+                        final.append(tkn)
+                    tks.append((" ".join(final).replace("\\s", " "), i));
+            else:
+                tks.append((tkn, i));
+    
+    return tks;
+
+enum NodeType:
+    FUNC
+    IMPORT
+
+# sep
+
+struct CallNode:
+    funcname: str;
+    args: list[str];
+
+struct OtherNode:
+    value: str;
+    line: int;
+
+struct SetNode:
+    vname: str;
+    code: All;
+
+struct ReturnNode:
+    returncode: All;
+
+struct BlockNode:
+    code: list[CallNode, OtherNode, ReturnNode];
+
+struct FuncNode:
+    name: str;
+    args: list[str];
+    block: BlockNode;
+
+struct ImportNode:
+    filepath: str;
+
+struct ProgramNode:
+    code: list[FuncNode, ImportNode];
+
+def parse(tks: list[tuple[str, int]], is_func: bool = False) -> All:
+    i: int = 0;
+    if !is_func:
+        prog: ProgramNode = ProgramNode([]);
+    else:
+        prog: BlockNode = BlockNode([]);
+    while i < len(tks):
+        t: tuple[str, int] = tks[i];
+        i++;
+        if t[0] == "create":
+            t = tks[i];
+            i++;
+            fname: str = t[0];
+            t = tks[i];
+            i++;
+            if t[0] != ":":
+                raise ParserExpectedError(t[0], t[1], ":");
+            t = tks[i];
+            i++;
+            args: list[str] = [];
+            while i < len(tks) && t[0] != ":":
+                args.append(t[0]);
+                t = tks[i];
+                i++;
+            t = tks[i];
+            i++;
+            if t[0] != "{":
+                raise ParserExpectedError(t[0], t[1], "{");
+            t = tks[i];
+            i++;
+            fcode: list[tuple[str, int]] = [];
+            while t[0] != "}" && i < len(tks):
+                fcode.append(t);
+                t = tks[i];
+                i++;
+            prog.code.append(FuncNode(fname, args, parse(fcode, True)));
+        elif t[0] == "import":
+            t = tks[i];
+            i++;
+            if !(t[0].startswith("\"") && t[0].endswith("\"")):
+                raise ParserTypeError(t[0], t[1], "string");
+            prog.code.append(ImportNode(t[0][1:-1]));
+        elif t[0] == "call":
+            t = tks[i];
+            i++;
+            name: str = t[0];
+            t = tks[i];
+            i++;
+            args: list[str] = [];
+            while t[0] != "::" && i < len(tks):
+                args.append(t[0]);
+                t = tks[i];
+                i++;
+            prog.code.append(CallNode(name, args));
+        elif t[0] == "return":
+            t = tks[i];
+            i++;
+            code: list[tuple[str, int]] = [];
+            while t[0] != "::" && i < len(tks):
+                code.append(t);
+                t = tks[i];
+                i++;
+            prog.code.append(ReturnNode(parse(code, True)));
+        elif t[0] == "set":
+            t = tks[i];
+            i++;
+            name: str = t[0];
+            t = tks[i];
+            i++;
+            if t[0] != "->":
+                raise ParserExpectedError(t[0], t[1], "->");
+            t = tks[i];
+            i++;
+            code: list[tuple[str, int]] = [];
+            while t[0] != "::" && i < len(tks):
+                code.append(t);
+                t = tks[i];
+                i++;
+            prog.code.append(SetNode(name, parse(code, True)));
+        elif t[0] == "/*":
+            while t[0] != "*/" and i < len(tks):
+                t = tks[i];
+                i++;
+        else:
+            prog.code.append(OtherNode(t[0], t[1]));
+    return prog;
