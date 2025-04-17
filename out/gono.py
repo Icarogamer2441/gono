@@ -200,11 +200,30 @@ class ReturnNode:
 
 class BlockNode:
 
-    def __init__(self, code: list[CallNode, OtherNode, ReturnNode]) ->None:
+    def __init__(self, code: All) ->None:
         self.code = code
 
     def __repr__(self) ->str:
         return f'BlockNode(code={self.code})'
+
+
+class IfNode:
+
+    def __init__(self, cond: BlockNode, code: BlockNode) ->None:
+        self.cond = cond
+        self.code = code
+
+    def __repr__(self) ->str:
+        return f'IfNode(cond={self.cond}, code={self.code})'
+
+
+class ElseNode:
+
+    def __init__(self, code: BlockNode) ->None:
+        self.code = code
+
+    def __repr__(self) ->str:
+        return f'ElseNode(code={self.code})'
 
 
 class FuncNode:
@@ -269,10 +288,20 @@ def parse(tks: list[tuple[str, int]], is_func: bool=False) ->All:
             t: tuple[str, int] = tks[i]
             i: int = i + 1
             fcode: list[tuple[str, int]] = []
-            while t[0] != '}' and i < len(tks):
-                fcode.append(t)
+            en: int = 1
+            while en > 0 and i < len(tks):
+                if t[0] == '}':
+                    en: int = en - 1
+                    if en > 0:
+                        fcode.append(t)
+                elif t[0] == '{':
+                    en: int = en + 1
+                    fcode.append(t)
+                else:
+                    fcode.append(t)
                 t: tuple[str, int] = tks[i]
                 i: int = i + 1
+            i: int = i - 1
             prog.code.append(FuncNode(fname, args, parse(fcode, True)))
         elif t[0] == 'import':
             t: tuple[str, int] = tks[i]
@@ -321,6 +350,55 @@ def parse(tks: list[tuple[str, int]], is_func: bool=False) ->All:
             while t[0] != '*/' and i < len(tks):
                 t: tuple[str, int] = tks[i]
                 i: int = i + 1
+        elif t[0] == 'if':
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            cond: list[tuple[str, int]] = []
+            while t[0] != '{' and i < len(tks):
+                cond.append(t)
+                t: tuple[str, int] = tks[i]
+                i: int = i + 1
+            code: list[tuple[str, int]] = []
+            en: int = 1
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            while en > 0 and i < len(tks):
+                if t[0] == '{':
+                    en: int = en + 1
+                    code.append(t)
+                elif t[0] == '}':
+                    en: int = en - 1
+                    if en > 0:
+                        code.append(t)
+                else:
+                    code.append(t)
+                t: tuple[str, int] = tks[i]
+                i: int = i + 1
+            i: int = i - 1
+            prog.code.append(IfNode(parse(cond, True), parse(code, True)))
+        elif t[0] == 'else':
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            if t[0] != '{':
+                raise ParserExpectedError(t[0], t[1], '{')
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            code: list[tuple[str, int]] = []
+            en: int = 1
+            while en > 0 and i < len(tks):
+                if t[0] == '{':
+                    en: int = en + 1
+                    code.append(t)
+                elif t[0] == '}':
+                    en: int = en - 1
+                    if en > 0:
+                        code.append(t)
+                else:
+                    code.append(t)
+                t: tuple[str, int] = tks[i]
+                i: int = i + 1
+            i: int = i - 1
+            prog.code.append(ElseNode(parse(code, True)))
         else:
             prog.code.append(OtherNode(t[0], t[1]))
     return prog
@@ -347,10 +425,12 @@ outcode: list[str] = ['section .bss', 'buf:    resb    20', '',
 strs: list[tuple[str, int]] = []
 strco: list[int] = [0]
 regargs: list[str] = ['rbx', 'rdi', 'rsi', 'rdx', 'r8']
-regargs1: list[str] = ['rdi', 'rsi', 'rdx', 'r8', 'rbx']
+ifn: list[int] = [0]
+eqn: list[int] = [0]
 
 
-def comp_expr(block: BlockNode, args: dict[str, int]={}) ->int:
+def comp_expr(block: BlockNode, args: dict[str, int]={}, varss: dict[str,
+    int]={}) ->int:
     i: int = 0
     nodes: All = block.code
     while i < len(nodes):
@@ -365,33 +445,126 @@ def comp_expr(block: BlockNode, args: dict[str, int]={}) ->int:
                 outcode.append('  push {}'.format(n.value))
             elif n.value == '+':
                 outcode.append('  pop rax')
-                outcode.append('  pop r8')
-                outcode.append('  add r8, rax')
-                outcode.append('  push r8')
-                outcode.append('  xor r8, r8')
+                outcode.append('  pop r9')
+                outcode.append('  add r9, rax')
+                outcode.append('  push r9')
+                outcode.append('  xor r9, r9')
             elif n.value == '-':
                 outcode.append('  pop rax')
-                outcode.append('  pop r8')
-                outcode.append('  sub r8, rax')
-                outcode.append('  push r8')
-                outcode.append('  xor r8, r8')
+                outcode.append('  pop r9')
+                outcode.append('  sub r9, rax')
+                outcode.append('  push r9')
+                outcode.append('  xor r9, r9')
             elif n.value == '*':
                 outcode.append('  pop rax')
-                outcode.append('  pop r8')
-                outcode.append('  imul r8, rax')
-                outcode.append('  push r8')
-                outcode.append('  xor r8, r8')
+                outcode.append('  pop r9')
+                outcode.append('  imul r9, rax')
+                outcode.append('  push r9')
+                outcode.append('  xor r9, r9')
             elif n.value == '/':
-                outcode.append('  pop r8')
+                outcode.append('  pop r9')
                 outcode.append('  pop rax')
                 outcode.append('  push rdx')
                 outcode.append('  xor rdx, rdx')
-                outcode.append('  div r8')
+                outcode.append('  div r9')
                 outcode.append('  pop rdx')
                 outcode.append('  push rax')
-                outcode.append('  xor r8, r8')
+                outcode.append('  xor r9, r9')
             elif n.value in args.keys():
                 outcode.append('  push {}'.format(regargs[args[n.value]]))
+            elif n.value == '=':
+                outcode.append('  pop rax')
+                outcode.append('  pop r9')
+                outcode.append('.eq{}:'.format(eqn[0]))
+                outcode.append('  cmp r9, rax')
+                outcode.append('  je .eqtrue{}'.format(eqn[0]))
+                outcode.append('  jmp .eqfalse{}'.format(eqn[0]))
+                outcode.append('.eqtrue{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 1')
+                outcode.append('  jmp .eqend{}'.format(eqn[0]))
+                outcode.append('.eqfalse{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 0')
+                outcode.append('.eqend{}:'.format(eqn[0]))
+                outcode.append('  push rax')
+                eqn[0] += 1
+            elif n.value == '!=':
+                outcode.append('  pop rax')
+                outcode.append('  pop r9')
+                outcode.append('.eq{}:'.format(eqn[0]))
+                outcode.append('  cmp r9, rax')
+                outcode.append('  jne .eqtrue{}'.format(eqn[0]))
+                outcode.append('  jmp .eqfalse{}'.format(eqn[0]))
+                outcode.append('.eqtrue{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 1')
+                outcode.append('  jmp .eqend{}'.format(eqn[0]))
+                outcode.append('.eqfalse{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 0')
+                outcode.append('.eqend{}:'.format(eqn[0]))
+                outcode.append('  push rax')
+                eqn[0] += 1
+            elif n.value == '>':
+                outcode.append('  pop rax')
+                outcode.append('  pop r9')
+                outcode.append('.eq{}:'.format(eqn[0]))
+                outcode.append('  cmp r9, rax')
+                outcode.append('  jg .eqtrue{}'.format(eqn[0]))
+                outcode.append('  jmp .eqfalse{}'.format(eqn[0]))
+                outcode.append('.eqtrue{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 1')
+                outcode.append('  jmp .eqend{}'.format(eqn[0]))
+                outcode.append('.eqfalse{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 0')
+                outcode.append('.eqend{}:'.format(eqn[0]))
+                outcode.append('  push rax')
+                eqn[0] += 1
+            elif n.value == '<':
+                outcode.append('  pop rax')
+                outcode.append('  pop r9')
+                outcode.append('.eq{}:'.format(eqn[0]))
+                outcode.append('  cmp r9, rax')
+                outcode.append('  jl .eqtrue{}'.format(eqn[0]))
+                outcode.append('  jmp .eqfalse{}'.format(eqn[0]))
+                outcode.append('.eqtrue{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 1')
+                outcode.append('  jmp .eqend{}'.format(eqn[0]))
+                outcode.append('.eqfalse{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 0')
+                outcode.append('.eqend{}:'.format(eqn[0]))
+                outcode.append('  push rax')
+                eqn[0] += 1
+            elif n.value == '>=':
+                outcode.append('  pop rax')
+                outcode.append('  pop r9')
+                outcode.append('.eq{}:'.format(eqn[0]))
+                outcode.append('  cmp r9, rax')
+                outcode.append('  jge .eqtrue{}'.format(eqn[0]))
+                outcode.append('  jmp .eqfalse{}'.format(eqn[0]))
+                outcode.append('.eqtrue{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 1')
+                outcode.append('  jmp .eqend{}'.format(eqn[0]))
+                outcode.append('.eqfalse{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 0')
+                outcode.append('.eqend{}:'.format(eqn[0]))
+                outcode.append('  push rax')
+                eqn[0] += 1
+            elif n.value == '<=':
+                outcode.append('  pop rax')
+                outcode.append('  pop r9')
+                outcode.append('.eq{}:'.format(eqn[0]))
+                outcode.append('  cmp r9, rax')
+                outcode.append('  jle .eqtrue{}'.format(eqn[0]))
+                outcode.append('  jmp .eqfalse{}'.format(eqn[0]))
+                outcode.append('.eqtrue{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 1')
+                outcode.append('  jmp .eqend{}'.format(eqn[0]))
+                outcode.append('.eqfalse{}:'.format(eqn[0]))
+                outcode.append('  mov rax, 0')
+                outcode.append('.eqend{}:'.format(eqn[0]))
+                outcode.append('  push rax')
+                eqn[0] += 1
+            elif n.value in varss.keys():
+                outcode.append('  mov rax, [rbp-{}]'.format(varss[n.value]))
+                outcode.append('  push rax')
     return 0
 
 
@@ -405,6 +578,11 @@ def comp_block(block: BlockNode, args: list[str]=[]) ->int:
         i: int = i + 1
         if isinstance(n, CallNode):
             cal: int = len(n.args)
+            argss: dict[All, int] = {}
+            i2: int = 0
+            while i2 < len(args):
+                argss[args[i2]] = i2
+                i2: int = i2 + 1
             for i2, arg in enumerate(n.args):
                 if arg.startswith('"') and arg.endswith('"'):
                     strs.append((arg, strco[0]))
@@ -418,7 +596,7 @@ def comp_block(block: BlockNode, args: list[str]=[]) ->int:
                         varss[arg]))
                 else:
                     outcode.append('  mov {}, {}'.format(regargs[i2],
-                        regargs1[i2 - (cal - 1)]))
+                        regargs[argss[arg]]))
             outcode.append('  call {}'.format(n.funcname))
             outcode.append('  push rax')
         elif isinstance(n, ReturnNode):
@@ -427,7 +605,7 @@ def comp_block(block: BlockNode, args: list[str]=[]) ->int:
             while i2 < len(args):
                 argss[args[i2]] = i2
                 i2: int = i2 + 1
-            comp_expr(n.returncode, argss)
+            comp_expr(n.returncode, argss, varss)
             outcode.append('  pop rax')
         elif isinstance(n, SetNode):
             argss: dict[All, int] = {}
@@ -435,11 +613,34 @@ def comp_block(block: BlockNode, args: list[str]=[]) ->int:
             while i2 < len(args):
                 argss[args[i2]] = i2
                 i2: int = i2 + 1
-            comp_expr(n.code, argss)
+            comp_expr(n.code, argss, varss)
             outcode.append('  pop rax')
             outcode.append('  mov qword [rbp-{}], rax'.format(offset * 8))
             varss[n.vname] = offset * 8
             offset: int = offset + 1
+        elif isinstance(n, IfNode):
+            argss: dict[All, int] = {}
+            i2: int = 0
+            while i2 < len(args):
+                argss[args[i2]] = i2
+                i2: int = i2 + 1
+            comp_expr(n.cond, argss, varss)
+            outcode.append('  pop rax')
+            outcode.append('.ifcond_check{}:'.format(ifn[0]))
+            outcode.append('  cmp rax, 1')
+            outcode.append('  je .if{}'.format(ifn[0]))
+            outcode.append('  jmp .else{}'.format(ifn[0]))
+            outcode.append('.if{}:'.format(ifn[0]))
+            comp_block(n.code)
+            outcode.append('  jmp .ifend{}'.format(ifn[0]))
+            outcode.append('.else{}:'.format(ifn[0]))
+            if i < len(nodes):
+                if isinstance(nodes[i], ElseNode):
+                    n: All = nodes[i]
+                    i: int = i + 1
+                    comp_block(n.code)
+            outcode.append('.ifend{}:'.format(ifn[0]))
+            ifn[0] += 1
     return 0
 
 

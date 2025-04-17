@@ -48,7 +48,14 @@ struct ReturnNode:
     returncode: All;
 
 struct BlockNode:
-    code: list[CallNode, OtherNode, ReturnNode];
+    code: All;
+
+struct IfNode:
+    cond: BlockNode;
+    code: BlockNode;
+
+struct ElseNode:
+    code: BlockNode;
 
 struct FuncNode:
     name: str;
@@ -92,10 +99,20 @@ def parse(tks: list[tuple[str, int]], is_func: bool = False) -> All:
             t = tks[i];
             i++;
             fcode: list[tuple[str, int]] = [];
-            while t[0] != "}" && i < len(tks):
-                fcode.append(t);
+            en: int = 1;
+            while en > 0 && i < len(tks):
+                if t[0] == "}":
+                    en--;
+                    if en > 0:
+                        fcode.append(t);
+                elif t[0] == "{":
+                    en++;
+                    fcode.append(t);
+                else:
+                    fcode.append(t);
                 t = tks[i];
                 i++;
+            i--;
             prog.code.append(FuncNode(fname, args, parse(fcode, True)));
         elif t[0] == "import":
             t = tks[i];
@@ -144,6 +161,55 @@ def parse(tks: list[tuple[str, int]], is_func: bool = False) -> All:
             while t[0] != "*/" and i < len(tks):
                 t = tks[i];
                 i++;
+        elif t[0] == "if":
+            t = tks[i];
+            i++;
+            cond: list[tuple[str, int]] = [];
+            while t[0] != "{" && i < len(tks):
+                cond.append(t);
+                t = tks[i];
+                i++;
+            code: list[tuple[str, int]] = [];
+            en: int = 1;
+            t = tks[i];
+            i++;
+            while en > 0 && i < len(tks):
+                if t[0] == "{":
+                    en++;
+                    code.append(t);
+                elif t[0] == "}":
+                    en--;
+                    if en > 0:
+                        code.append(t);
+                else:
+                    code.append(t);
+                t = tks[i];
+                i++;
+            i--;
+            prog.code.append(IfNode(parse(cond, True), parse(code, True)));
+        elif t[0] == "else":
+            t = tks[i];
+            i++;
+            if t[0] != "{":
+                raise ParserExpectedError(t[0], t[1], "{");
+            t = tks[i];
+            i++;
+            code: list[tuple[str, int]] = [];
+            en: int = 1;
+            while en > 0 && i < len(tks):
+                if t[0] == "{":
+                    en++;
+                    code.append(t);
+                elif t[0] == "}":
+                    en--;
+                    if en > 0:
+                        code.append(t);
+                else:
+                    code.append(t);
+                t = tks[i];
+                i++;
+            i--;
+            prog.code.append(ElseNode(parse(code, True)));
         else:
             prog.code.append(OtherNode(t[0], t[1]));
     return prog;

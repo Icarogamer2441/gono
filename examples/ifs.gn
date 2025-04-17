@@ -1,0 +1,13 @@
+import "libs/stdlib"
+
+create main : : {
+    set a -> 1 ::
+    set b -> 2 ::
+    if a b = { /* = != > < >= <= */
+        call prints "A == B\n" 7 ::
+    } else {
+        call prints "A != B\n" 7 ::
+    }
+
+    call end ::
+}
