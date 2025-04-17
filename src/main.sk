@@ -52,6 +52,7 @@ regargs: list[str] = ["rbx", "rdi", "rsi", "rdx", "r8"];
 
 ifn: list[int] = [0];
 eqn: list[int] = [0];
+loopn: list[int] = [0];
 
 def comp_expr(block: BlockNode, args: dict[str, int] = {}, varss: dict[str, int] = {}) -> int:
     i: int = 0;
@@ -190,11 +191,10 @@ def comp_expr(block: BlockNode, args: dict[str, int] = {}, varss: dict[str, int]
                 outcode.append("  push rax");
     return 0;
 
-def comp_block(block: BlockNode, args: list[str] = []) -> int:
+def comp_block(block: BlockNode, args: list[str] = [], varss: dict[str, int] ={}) -> int:
     i: int = 0;
     nodes: All = block.code;
     offset: int = 1;
-    varss: dict[str, int] = {};
     while i < len(nodes):
         n: All = nodes[i];
         i++;
@@ -251,16 +251,32 @@ def comp_block(block: BlockNode, args: list[str] = []) -> int:
             outcode.append("  je .if{}".f(ifn[0]));
             outcode.append("  jmp .else{}".f(ifn[0]));
             outcode.append(".if{}:".f(ifn[0]));
-            comp_block(n.code);
+            comp_block(n.code, args, varss);
             outcode.append("  jmp .ifend{}".f(ifn[0]));
             outcode.append(".else{}:".f(ifn[0]));
             if i < len(nodes):
                 if isinstance(nodes[i], ElseNode):
                     n = nodes[i];
                     i++;
-                    comp_block(n.code);
+                    comp_block(n.code, args, varss);
             outcode.append(".ifend{}:".f(ifn[0]));
             ifn[0] += 1;
+        elif isinstance(n, IncreNode):
+            outcode.append("  mov rax, [rbp-{}]".f(varss[n.var] if n.var in varss.keys() else "Unknown"));
+            outcode.append("  inc rax");
+            outcode.append("  mov qword [rbp-{}], rax".f(varss[n.var] if n.var in varss.keys() else "Unknown"));
+        elif isinstance(n, DecreNode):
+            outcode.append("  mov rax, [rbp-{}]".f(varss[n.var] if n.var in varss.keys() else "Unknown"));
+            outcode.append("  dec rax");
+            outcode.append("  mov qword [rbp-{}], rax".f(varss[n.var] if n.var in varss.keys() else "Unknown"));
+        elif isinstance(n, BreakNode):
+            outcode.append("  jmp .loopend{}".f(loopn[0]));
+        elif isinstance(n, LoopNode):
+            outcode.append(".loop{}:".f(loopn[0]));
+            comp_block(n.code, args, varss);
+            outcode.append("  jmp .loop{}".f(loopn[0]));
+            outcode.append(".loopend{}:".f(loopn[0]));
+            loopn[0] += 1;
     return 0;
 
 def comp(prog: ProgramNode) -> int:

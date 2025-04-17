@@ -1,0 +1,16 @@
+import "libs/stdlib"
+
+create main : : {
+    set i -> 0 ::
+    loop {
+        call prints "I: " 3 ::
+        call printi i ::
+        call prints "\n" 1 ::
+        incre i :: /* you can also use decre.
+                      you can only increment and decrement variables */
+        if i 10 > {
+            break ::
+        }
+    }
+    call end ::
+}

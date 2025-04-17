@@ -47,6 +47,15 @@ struct SetNode:
 struct ReturnNode:
     returncode: All;
 
+struct BreakNode:
+    nothing: str;
+
+struct IncreNode:
+    var: str;
+
+struct DecreNode:
+    var: str;
+
 struct BlockNode:
     code: All;
 
@@ -55,6 +64,9 @@ struct IfNode:
     code: BlockNode;
 
 struct ElseNode:
+    code: BlockNode;
+
+struct LoopNode:
     code: BlockNode;
 
 struct FuncNode:
@@ -210,6 +222,53 @@ def parse(tks: list[tuple[str, int]], is_func: bool = False) -> All:
                 i++;
             i--;
             prog.code.append(ElseNode(parse(code, True)));
+        elif t[0] == "break":
+            t = tks[i];
+            i++;
+            if t[0] != "::":
+                raise ParserExpectedError(t[0], t[1], "::");
+            prog.code.append(BreakNode("break"));
+        elif t[0] == "incre":
+            t = tks[i];
+            i++;
+            var: str = t[0];
+            t = tks[i];
+            i++;
+            if t[0] != "::":
+                raise ParserExpectedError(t[0], t[1], "::");
+            prog.code.append(IncreNode(var));
+        elif t[0] == "decre":
+            t = tks[i];
+            i++;
+            var: str = t[0];
+            t = tks[i];
+            i++;
+            if t[0] != "::":
+                raise ParserExpectedError(t[0], t[1], "::");
+            prog.code.append(DecreNode(var));
+        elif t[0] == "loop":
+            t = tks[i];
+            i++;
+            if t[0] != "{":
+                raise ParserExpectedError(t[0], t[1], "{");
+            t = tks[i];
+            i++;
+            code: list[tuple[str, int]] = [];
+            en: int = 1;
+            while en > 0 && i < len(tks):
+                if t[0] == "{":
+                    en++;
+                    code.append(t);
+                elif t[0] == "}":
+                    en--;
+                    if en > 0:
+                        code.append(t);
+                else:
+                    code.append(t);
+                t = tks[i];
+                i++;
+            i--;
+            prog.code.append(LoopNode(parse(code, True)));
         else:
             prog.code.append(OtherNode(t[0], t[1]));
     return prog;

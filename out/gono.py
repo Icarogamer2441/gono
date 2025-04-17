@@ -198,6 +198,33 @@ class ReturnNode:
         return f'ReturnNode(returncode={self.returncode})'
 
 
+class BreakNode:
+
+    def __init__(self, nothing: str) ->None:
+        self.nothing = nothing
+
+    def __repr__(self) ->str:
+        return f'BreakNode(nothing={self.nothing})'
+
+
+class IncreNode:
+
+    def __init__(self, var: str) ->None:
+        self.var = var
+
+    def __repr__(self) ->str:
+        return f'IncreNode(var={self.var})'
+
+
+class DecreNode:
+
+    def __init__(self, var: str) ->None:
+        self.var = var
+
+    def __repr__(self) ->str:
+        return f'DecreNode(var={self.var})'
+
+
 class BlockNode:
 
     def __init__(self, code: All) ->None:
@@ -224,6 +251,15 @@ class ElseNode:
 
     def __repr__(self) ->str:
         return f'ElseNode(code={self.code})'
+
+
+class LoopNode:
+
+    def __init__(self, code: BlockNode) ->None:
+        self.code = code
+
+    def __repr__(self) ->str:
+        return f'LoopNode(code={self.code})'
 
 
 class FuncNode:
@@ -399,6 +435,53 @@ def parse(tks: list[tuple[str, int]], is_func: bool=False) ->All:
                 i: int = i + 1
             i: int = i - 1
             prog.code.append(ElseNode(parse(code, True)))
+        elif t[0] == 'break':
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            if t[0] != '::':
+                raise ParserExpectedError(t[0], t[1], '::')
+            prog.code.append(BreakNode('break'))
+        elif t[0] == 'incre':
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            var: str = t[0]
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            if t[0] != '::':
+                raise ParserExpectedError(t[0], t[1], '::')
+            prog.code.append(IncreNode(var))
+        elif t[0] == 'decre':
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            var: str = t[0]
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            if t[0] != '::':
+                raise ParserExpectedError(t[0], t[1], '::')
+            prog.code.append(DecreNode(var))
+        elif t[0] == 'loop':
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            if t[0] != '{':
+                raise ParserExpectedError(t[0], t[1], '{')
+            t: tuple[str, int] = tks[i]
+            i: int = i + 1
+            code: list[tuple[str, int]] = []
+            en: int = 1
+            while en > 0 and i < len(tks):
+                if t[0] == '{':
+                    en: int = en + 1
+                    code.append(t)
+                elif t[0] == '}':
+                    en: int = en - 1
+                    if en > 0:
+                        code.append(t)
+                else:
+                    code.append(t)
+                t: tuple[str, int] = tks[i]
+                i: int = i + 1
+            i: int = i - 1
+            prog.code.append(LoopNode(parse(code, True)))
         else:
             prog.code.append(OtherNode(t[0], t[1]))
     return prog
@@ -427,6 +510,7 @@ strco: list[int] = [0]
 regargs: list[str] = ['rbx', 'rdi', 'rsi', 'rdx', 'r8']
 ifn: list[int] = [0]
 eqn: list[int] = [0]
+loopn: list[int] = [0]
 
 
 def comp_expr(block: BlockNode, args: dict[str, int]={}, varss: dict[str,
@@ -568,11 +652,11 @@ def comp_expr(block: BlockNode, args: dict[str, int]={}, varss: dict[str,
     return 0
 
 
-def comp_block(block: BlockNode, args: list[str]=[]) ->int:
+def comp_block(block: BlockNode, args: list[str]=[], varss: dict[str, int]={}
+    ) ->int:
     i: int = 0
     nodes: All = block.code
     offset: int = 1
-    varss: dict[str, int] = {}
     while i < len(nodes):
         n: All = nodes[i]
         i: int = i + 1
@@ -631,16 +715,36 @@ def comp_block(block: BlockNode, args: list[str]=[]) ->int:
             outcode.append('  je .if{}'.format(ifn[0]))
             outcode.append('  jmp .else{}'.format(ifn[0]))
             outcode.append('.if{}:'.format(ifn[0]))
-            comp_block(n.code)
+            comp_block(n.code, args, varss)
             outcode.append('  jmp .ifend{}'.format(ifn[0]))
             outcode.append('.else{}:'.format(ifn[0]))
             if i < len(nodes):
                 if isinstance(nodes[i], ElseNode):
                     n: All = nodes[i]
                     i: int = i + 1
-                    comp_block(n.code)
+                    comp_block(n.code, args, varss)
             outcode.append('.ifend{}:'.format(ifn[0]))
             ifn[0] += 1
+        elif isinstance(n, IncreNode):
+            outcode.append('  mov rax, [rbp-{}]'.format(varss[n.var] if n.
+                var in varss.keys() else 'Unknown'))
+            outcode.append('  inc rax')
+            outcode.append('  mov qword [rbp-{}], rax'.format(varss[n.var] if
+                n.var in varss.keys() else 'Unknown'))
+        elif isinstance(n, DecreNode):
+            outcode.append('  mov rax, [rbp-{}]'.format(varss[n.var] if n.
+                var in varss.keys() else 'Unknown'))
+            outcode.append('  dec rax')
+            outcode.append('  mov qword [rbp-{}], rax'.format(varss[n.var] if
+                n.var in varss.keys() else 'Unknown'))
+        elif isinstance(n, BreakNode):
+            outcode.append('  jmp .loopend{}'.format(loopn[0]))
+        elif isinstance(n, LoopNode):
+            outcode.append('.loop{}:'.format(loopn[0]))
+            comp_block(n.code, args, varss)
+            outcode.append('  jmp .loop{}'.format(loopn[0]))
+            outcode.append('.loopend{}:'.format(loopn[0]))
+            loopn[0] += 1
     return 0
 
 
